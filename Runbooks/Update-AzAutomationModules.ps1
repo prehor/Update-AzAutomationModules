@@ -533,7 +533,14 @@ Write-Log "### Runbook started at $(Get-Date -Format 's')Z"
 
 # $AutomationAccountName
 if (-not $AutomationAccountName) {
-	$AutomationAccountName = $Env:AZURE_AUTOMATION_ACCOUNT_NAME
+	switch ($Env:POWERSHELL_DISTRIBUTION_CHANNEL) {
+		'AzureAutomation' {
+			$AutomationAccountName = Get-AutomationVariable -Name 'AZURE_AUTOMATION_ACCOUNT_NAME'
+		}
+		default: {
+			$AutomationAccountName = $Env:AZURE_AUTOMATION_ACCOUNT_NAME
+		}
+	}
 }
 if (-not $AutomationAccountName) {
 	throw "$($MyInvocation.MyCommand.Name): Cannot bind argument to parameter 'AutomationAccountName' because it is an empty string."
@@ -541,7 +548,14 @@ if (-not $AutomationAccountName) {
 
 # $ResourceGroupName
 if (-not $ResourceGroupName) {
-	$ResourceGroupName = $Env:AZURE_AUTOMATION_RESOURCE_GROUP
+	switch ($Env:POWERSHELL_DISTRIBUTION_CHANNEL) {
+		'AzureAutomation' {
+			$ResourceGroupName = Get-AutomationVariable -Name 'AZURE_AUTOMATION_RESOURCE_GROUP'
+		}
+		default: {
+			$ResourceGroupName = $Env:AZURE_AUTOMATION_RESOURCE_GROUP
+		}
+	}
 }
 if (-not $ResourceGroupName) {
 	throw "$($MyInvocation.MyCommand.Name): Cannot bind argument to parameter 'ResourceGroupName' because it is an empty string."
