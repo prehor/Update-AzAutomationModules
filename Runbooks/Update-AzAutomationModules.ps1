@@ -76,14 +76,14 @@ param (
 
 #endregion
 
+# Set strict mode
+Set-StrictMode -Version Latest
+
 ###############################################################################
 ### CONSTANTS #################################################################
 ###############################################################################
 
 #region Constants
-
-# Set strict mode
-Set-StrictMode -Version Latest
 
 # Stop on errors
 $ErrorActionPreference = 'Stop'
@@ -115,27 +115,64 @@ function Write-Log() {
 		[String]$Message,
 
 		[Parameter()]
+		[String[]]$Property,
+
+		[Parameter(ValueFromPipeline)]
 		[Object[]]$Arguments
 	)
 
-	# Format timestamp
-	$Timestamp = '{0}Z' -f (Get-Date -Format 's')
-	$Message = '{0} {1}' -f $Timestamp, $Message
-
-	# Format arguments
-	if ($null -ne $Arguments) {
-		$Message = $Message -f $Arguments
+	begin {
+		$Properties = $Property
 	}
 
-	# Always output verbose messages
-	$OldVerbosePreference = $VerbosePreference
-	$VerbosePreference = 'Continue'
+	process {
+		# Always output verbose messages
+		$Private:SavedVerbosePreference = $VerbosePreference
+		$VerbosePreference = 'Continue'
 
-	# Output message
-	Write-Verbose $Message
+		# Format timestamp
+		$Timestamp = '{0}Z' -f (Get-Date -Format 's')
+		$MessageWithTimestamp = '{0} {1}' -f $Timestamp, $Message
 
-	# Restore $VerbosePreference
-	$VerbosePreference = $OldVerbosePreference
+		# Format arguments
+		if ($null -eq $Properties) {
+			# $Arguments contains array of values
+			$Values = @()
+			foreach ($Argument in $Arguments) {
+				$Values += $_ | Out-String |
+				# Remove ANSI colors
+				ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' }
+			}
+			Write-Verbose ($MessageWithTimestamp -f $Values)
+		} else {
+			# $Arguments contains array of objects with properties
+			foreach ($Argument in $Arguments) {
+				$Values = $()
+				# Convert hashtable to object
+				if ($Argument -is 'Hashtable') {
+					$Argument = [PSCustomObject]$Argument
+				}
+				$ArgumentProperties = $Argument.PSObject.Properties.Name
+				foreach ($Property in $Properties) {
+					$Values += if ($ArgumentProperties -contains $Property) {
+						if ($null -ne ($Value = $Argument.$_)) {
+							$Value | Out-String |
+							# Remove ANSI colors
+							ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' }
+						} else {
+							'ENULL'
+						}
+					} else {
+						'ENONENT'
+					}
+				}
+				Write-Verbose ($MessageWithTimestamp -f $Values)
+			}
+		}
+
+		# Restore $VerbosePreference
+		$VerbosePreference = $Private:SavedVerbosePreference
+	}
 }
 
 ### Login-AzureAutomation #####################################################
@@ -155,14 +192,15 @@ function Login-AzureAutomation() {
 			$AzureContext = (Connect-AzAccount -Identity).Context
 
 			# Set and store context
-			Set-AzContext -Tenant $AzureContext.Tenant -SubscriptionId $AzureContext.Subscription -DefaultProfile $AzureContext
+			Set-AzContext -Tenant $AzureContext.Tenant -SubscriptionId $AzureContext.Subscription -DefaultProfile $AzureContext | Out-Null
 		}
 		default {
 			Write-Log "Using current user credentials"
-			Get-AzContext
 		}
 	}
 
+	# Log Azure Context
+	Get-AzContext | Format-List | Out-String -Stream | Where-Object { $_ -notmatch '^\s*$' } | Write-Log '{0}'
 }
 
 ### ConvertJsonDictTo-HashTable ###############################################
@@ -204,10 +242,9 @@ function Get-ModuleDependencyAndLatestVersion([String]$Name) {
 	if (!$SearchResult) {
 		Write-Log "Could not find module '$($Name)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
 	} else {
-		if ($SearchResult.Length -and $SearchResult.Length -gt 1) {
+		if ($SearchResult -is 'Object[]') {
 			$SearchResult = $SearchResult | Where-Object { $_.title.InnerText -eq $Name }
 		}
-
 		if (!$SearchResult) {
 			Write-Log "Could not find module '$($Name)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
 		} else {
@@ -442,7 +479,7 @@ function Update-ModulesInAutomationAccordingToDependency([String[][]]$ModuleUpda
 		foreach ($Module in $ModuleList) {
 			Write-Log  "### Update module '$($Module)'"
 
-			if (Update-AutomationModule -ModuleName $Module) {
+			if (Update-AutomationModule -Name $Module) {
 				$UpdatedModuleList += ,$Module
 			}
 			# Wait for modules batch import to finish
@@ -494,7 +531,7 @@ function Update-ProfileAndAutomationVersionToLatest([String]$AutomationModuleNam
 	$WebClient.DownloadFile($ProfileURL, $ProfilePath)
 
 	# Download automation module to temp location
-	Write-Log "Downloading profile module '$($AutomationModuleName)"
+	Write-Log "Downloading automation module '$($AutomationModuleName)"
 	$ModuleContentUrl = Get-ModuleContentUrl $AutomationModuleName
 	$AutomationURL = (Invoke-WebRequest -Uri $ModuleContentUrl -MaximumRedirection 0 -UseBasicParsing @Script:InvokeWebRequestCompatibilityParams -ErrorAction Ignore).Headers.Location
 	$AutomationPath = Join-Path $TempPath ($AutomationModuleName + ".zip")
@@ -512,9 +549,9 @@ function Update-ProfileAndAutomationVersionToLatest([String]$AutomationModuleNam
 
 	# Import modules
 	Write-Log "Importing profile module '$($ProfileModuleName)"
-	Import-Module (Join-Path $ProfileUnzipPath ($ProfileModuleName + ".psd1")) -Force -Verbose
+	Import-Module (Join-Path $ProfileUnzipPath ($ProfileModuleName + ".psd1")) -Force
 	Write-Log "Importing automation module '$($AutomationModuleName)"
-	Import-Module (Join-Path $AutomationUnzipPath ($AutomationModuleName + ".psd1")) -Force -Verbose
+	Import-Module (Join-Path $AutomationUnzipPath ($AutomationModuleName + ".psd1")) -Force
 }
 
 #endregion
@@ -524,6 +561,16 @@ function Update-ProfileAndAutomationVersionToLatest([String]$AutomationModuleNam
 ###############################################################################
 
 #region Main
+
+### Setup PowerShell Preferences ##############################################
+
+# Stop on errors
+$Private:SavedVerbosePreference = $ErrorActionPreference
+$ErrorActionPreference = 'Stop'
+
+# Suppress verbose messages
+$Private:SavedVerbosePreference = $VerbosePreference
+$VerbosePreference = 'SilentlyContinue'
 
 ### Open log ##################################################################
 $StartTimestamp = Get-Date
@@ -561,7 +608,6 @@ if (-not $ResourceGroupName) {
 	throw "$($MyInvocation.MyCommand.Name): Cannot bind argument to parameter 'ResourceGroupName' because it is an empty string."
 }
 
-
 ### Module Versions Override Hashtable ########################################
 
 # Convert JSON string to hashtable
@@ -585,5 +631,13 @@ Update-ModulesInAutomationAccordingToDependency $ModuleUpdateMapOrder
 ### Close log #################################################################
 $StopTimestamp = Get-Date
 Write-Log "### Runbook finished in $($StopTimestamp - $StartTimestamp)"
+
+### Restore PowerShell Preferences ############################################
+
+# Restore $ErrorActionPreference
+$ErrorActionPreference = $Private:SavedVerbosePreference
+
+# Restore $VerbosePreference
+$VerbosePreference = $Private:SavedVerbosePreference
 
 #endregion
