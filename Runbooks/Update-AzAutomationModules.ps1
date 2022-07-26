@@ -155,7 +155,7 @@ function Login-AzureAutomation() {
 			$AzureContext = (Connect-AzAccount -Identity).Context
 
 			# Set and store context
-			Set-AzContext -Tenant $AzureContext.Tenant -SubscriptionName $AzureContext.SubscriptionName -DefaultProfile $AzureContext
+			Set-AzContext -Tenant $AzureContext.Tenant -SubscriptionId $AzureContext.Subscription -DefaultProfile $AzureContext
 		}
 		default {
 			Write-Log "Using current user credentials"
