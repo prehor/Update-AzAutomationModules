@@ -120,11 +120,11 @@ function Write-Log() {
 
 	# Format timestamp
 	$Timestamp = '{0}Z' -f (Get-Date -Format 's')
-	$Mesage = '{0} {1}' -f $Timestamp, $Message
+	$Message = '{0} {1}' -f $Timestamp, $Message
 
 	# Format arguments
 	if ($null -ne $Arguments) {
-		$Message = $Mesage -f $Arguments
+		$Message = $Message -f $Arguments
 	}
 
 	# Always output verbose messages
