@@ -27,6 +27,9 @@ AZURE_AUTOMATION_RESOURCE_GROUP.
 .PARAMETER ModuleName
 (Optional) The name of modules that will be updated.
 
+.PARAMETER SkipModule
+(Optional) The name of modules that will be skipped.
+
 .PARAMETER ModuleVersionOverrides
 (Optional) Module versions to use instead of the latest on the PowerShell Gallery.
 If $null, the currently published latest versions will be used.
@@ -63,6 +66,9 @@ param (
 
 	[Parameter()]
 	[String[]]$ModuleName = @('Az.*', 'Az'),
+
+	[Parameter()]
+	[String[]]$SkipModule,
 
 	[Parameter()]
 	[String]$ModuleVersionOverrides,
@@ -378,6 +384,11 @@ function Create-ModuleUpdateMapOrder() {
 		Where-Object {
 			$AutomationModule = $_
 			# Select required modules
+			$SkipModule | ForEach-Object {
+				if ($AutomationModule.Name -like $_) {
+					return $false
+				}
+			}
 			$ModuleName | ForEach-Object {
 				if ($AutomationModule.Name -like $_) {
 					return $true
