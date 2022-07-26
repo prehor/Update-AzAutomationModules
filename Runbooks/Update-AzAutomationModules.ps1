@@ -186,30 +186,30 @@ function ConvertJsonDictTo-HashTable([String]$JsonString) {
 ### Get-ModuleDependencyAndLatestVersion ######################################
 
 # Checks the PowerShell Gallery for the latest available version for the module
-function Get-ModuleDependencyAndLatestVersion([String]$ModuleName) {
+function Get-ModuleDependencyAndLatestVersion([String]$Name) {
 
 	$ModuleUrlFormat = "$PsGalleryApiUrl/Search()?`$filter={1}&searchTerm=%27{0}%27&targetFramework=%27%27&includePrerelease=false&`$skip=0&`$top=40"
 
-	$ForcedModuleVersion = $ModuleVersionOverridesHashTable[$ModuleName]
+	$ForcedModuleVersion = $ModuleVersionOverridesHashTable[$Name]
 
 	$CurrentModuleUrl =
 		if ($ForcedModuleVersion) {
-			$ModuleUrlFormat -f $ModuleName, "Version%20eq%20'$ForcedModuleVersion'"
+			$ModuleUrlFormat -f $Name, "Version%20eq%20'$ForcedModuleVersion'"
 		} else {
-			$ModuleUrlFormat -f $ModuleName, 'IsLatestVersion'
+			$ModuleUrlFormat -f $Name, 'IsLatestVersion'
 		}
 
 	$SearchResult = Invoke-RestMethod -Method Get -Uri $CurrentModuleUrl -UseBasicParsing
 
 	if (!$SearchResult) {
-		Write-Log "Could not find module '$($ModuleName)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
+		Write-Log "Could not find module '$($Name)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
 	} else {
 		if ($SearchResult.Length -and $SearchResult.Length -gt 1) {
-			$SearchResult = $SearchResult | Where-Object { $_.title.InnerText -eq $ModuleName }
+			$SearchResult = $SearchResult | Where-Object { $_.title.InnerText -eq $Name }
 		}
 
 		if (!$SearchResult) {
-			Write-Log "Could not find module '$($ModuleName)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
+			Write-Log "Could not find module '$($Name)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
 		} else {
 			$PackageDetails = Invoke-RestMethod -Method Get -UseBasicParsing -Uri $SearchResult.id
 
@@ -224,42 +224,42 @@ function Get-ModuleDependencyAndLatestVersion([String]$ModuleName) {
 ### Get-ModuleContentUrl ######################################################
 
 # Get module content URL
-function Get-ModuleContentUrl($ModuleName) {
+function Get-ModuleContentUrl([String]$Name) {
 	$ModuleContentUrlFormat = "$PsGalleryApiUrl/package/{0}"
 	$VersionedModuleContentUrlFormat = "$ModuleContentUrlFormat/{1}"
 
-	$ForcedModuleVersion = $ModuleVersionOverridesHashTable[$ModuleName]
+	$ForcedModuleVersion = $ModuleVersionOverridesHashTable[$Name]
 	if ($ForcedModuleVersion) {
-		$VersionedModuleContentUrlFormat -f $ModuleName, $ForcedModuleVersion
+		$VersionedModuleContentUrlFormat -f $Name, $ForcedModuleVersion
 	} else {
-		$ModuleContentUrlFormat -f $ModuleName
+		$ModuleContentUrlFormat -f $Name
 	}
 }
 
 ### Update-AutomationModule ###################################################
 
 # Imports the module with given version into Azure Automation
-function Update-AutomationModule([String]$ModuleName) {
+function Update-AutomationModule([String]$Name) {
 
 	# Get module latest version
-	$LatestModuleVersionOnGallery = (Get-ModuleDependencyAndLatestVersion $ModuleName)[0]
+	$LatestModuleVersionOnGallery = (Get-ModuleDependencyAndLatestVersion $Name)[0]
 
 	# Find the actual blob storage location of the module
-	$ModuleContentUrl = Get-ModuleContentUrl $ModuleName
+	$ModuleContentUrl = Get-ModuleContentUrl $Name
 	do {
 		$ModuleContentUrl = (Invoke-WebRequest -Uri $ModuleContentUrl -MaximumRedirection 0 -UseBasicParsing @Script:InvokeWebRequestCompatibilityParams -ErrorAction Ignore).Headers.Location | Select-Object -First 1
 	} while (!$ModuleContentUrl.Contains(".nupkg"))
 
 	# Get current installed module
-	$CurrentModule = Get-AzAutomationModule -Name $ModuleName -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName
+	$CurrentModule = Get-AzAutomationModule -Name $Name -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName
 
 	# Upgrade the module to the latest version
 	if ($CurrentModule.Version -eq $LatestModuleVersionOnGallery) {
-		Write-Log "Skipping '$($ModuleName)' because is already present with version '$($LatestModuleVersionOnGallery)'"
+		Write-Log "Skipping '$($Name)' because is already present with version '$($LatestModuleVersionOnGallery)'"
 		return $false
 	} else {
-		Write-Log "Updating '$($ModuleName)' module '$($CurrentModule.Version)' => '$($LatestModuleVersionOnGallery)'"
-		New-AzAutomationModule -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName -Name $ModuleName -ContentLink $ModuleContentUrl | Out-Null
+		Write-Log "Updating '$($Name)' module '$($CurrentModule.Version)' => '$($LatestModuleVersionOnGallery)'"
+		New-AzAutomationModule -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName -Name $Name -ContentLink $ModuleContentUrl | Out-Null
 		return $true
 	}
 }
@@ -277,10 +277,10 @@ function Get-ModuleNameAndVersionFromPowershellGalleryDependencyFormat([String]$
 		throw "Improper dependency format"
 	}
 
-	$ModuleName = $Tokens[0]
-	$ModuleVersion = $Tokens[1].Trim("[","]")
+	$Name = $Tokens[0]
+	$Version = $Tokens[1].Trim("[","]")
 
-	@($ModuleName, $ModuleVersion)
+	@($Name, $Version)
 }
 
 ### AreAllModulesAdded ########################################################
