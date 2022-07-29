@@ -18,6 +18,5 @@ Fork this repository and synchronize it using (Azure Automation Source Control)[
 
 Update PowerShell modules in an Azure Automation account.
 
-Environment variables:
-* AZURE_AUTOMATION_ACCOUNT_NAME: Azure Automation account name.
-* AZURE_AUTOMATION_RESOURCE_GROUP: Azure Automation account resource group name.
+Required Azure permissions:
+* `Contributor` for *updated Azure Account* to *updated Azure Account*.

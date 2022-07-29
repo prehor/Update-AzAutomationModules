@@ -17,18 +17,16 @@ Azure Automation account with the module versions published in the PowerShell Ga
 Prerequisite: an Azure Automation account with an Azure Managed Identity account credential.
 
 .PARAMETER AutomationAccountName
-The Azure Automation account name. Uses the default value from the environment variable
-AZURE_AUTOMATION_ACCOUNT_NAME.
+The Azure Automation account name. Uses the default value from the environment variable AZURE_AUTOMATION_ACCOUNT_NAME.
 
 .PARAMETER ResourceGroupName
-The Azure Resource Group name. Uses the default value from the environment variable
-AZURE_AUTOMATION_RESOURCE_GROUP.
+The Azure Resource Group name. Uses the default value from the environment variable AZURE_AUTOMATION_RESOURCE_GROUP.
 
 .PARAMETER ModuleName
-(Optional) The name of modules that will be updated.
+(Optional) The name of modules that will be updated. Supports wildcards.
 
 .PARAMETER SkipModule
-(Optional) The name of modules that will be skipped.
+(Optional) The name of modules that will be skipped. Supports wildcards.
 
 .PARAMETER ModuleVersionOverrides
 (Optional) Module versions to use instead of the latest on the PowerShell Gallery.
