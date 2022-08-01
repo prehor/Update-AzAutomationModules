@@ -110,107 +110,6 @@ if ($PSVersionTable.PSVersion.Major -gt 5) {
 
 #region Functions
 
-### Write-Log #################################################################
-
-# Write formatted log message
-function Write-Log() {
-	param(
-		[Parameter(Position=0)]
-		[String]$Message,
-
-		[Parameter()]
-		[String[]]$Property,
-
-		[Parameter(ValueFromPipeline)]
-		[Object[]]$Arguments
-	)
-
-	begin {
-		$Properties = $Property
-	}
-
-	process {
-		# Always output verbose messages
-		$Private:SavedVerbosePreference = $VerbosePreference
-		$VerbosePreference = 'Continue'
-
-		# Format timestamp
-		$Timestamp = '{0}Z' -f (Get-Date -Format 's')
-		$MessageWithTimestamp = '{0} {1}' -f $Timestamp, $Message
-
-		# Format arguments
-		if ($null -eq $Properties) {
-			# $Arguments contains array of values
-			$Values = @()
-			foreach ($Argument in $Arguments) {
-				$Values += $_ | Out-String |
-				# Remove ANSI colors
-				ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' }
-			}
-			Write-Verbose ($MessageWithTimestamp -f $Values)
-		} else {
-			# $Arguments contains array of objects with properties
-			foreach ($Argument in $Arguments) {
-				$Values = $()
-				# Convert hashtable to object
-				if ($Argument -is 'Hashtable') {
-					$Argument = [PSCustomObject]$Argument
-				}
-				$ArgumentProperties = $Argument.PSObject.Properties.Name
-				foreach ($Property in $Properties) {
-					$Values += if ($ArgumentProperties -contains $Property) {
-						if ($null -ne ($Value = $Argument.$_)) {
-							$Value | Out-String |
-							# Remove ANSI colors
-							ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' }
-						} else {
-							'ENULL'
-						}
-					} else {
-						'ENONENT'
-					}
-				}
-				Write-Verbose ($MessageWithTimestamp -f $Values)
-			}
-		}
-
-		# Restore $VerbosePreference
-		$VerbosePreference = $Private:SavedVerbosePreference
-	}
-}
-
-### SignInTo-AzureAutomation ##################################################
-
-# Sign in to Azure Automation account
-function SignInTo-AzureAutomation() {
-	Write-Log "### Sign in to Azure Active Directory"
-
-	switch ($Env:POWERSHELL_DISTRIBUTION_CHANNEL) {
-		'AzureAutomation' {
-			Write-Log "Sign in with system managed identity"
-
-			# Ensure that you do not inherit an AzContext
-			Disable-AzContextAutosave -Scope Process | Out-Null
-
-			# Connect using a Managed Service Identity
-			$AzureContext = (Connect-AzAccount -Identity).Context
-
-			# Set and store context
-			Set-AzContext -Tenant $AzureContext.Tenant -SubscriptionId $AzureContext.Subscription -DefaultProfile $AzureContext | Out-Null
-		}
-		default {
-			Write-Log "Using current user credentials"
-		}
-	}
-
-	# Log Azure Context
-	Get-AzContext |
-	Format-List |
-	Out-String -Stream -Width 1000 |
-	Where-Object { $_ -notmatch '^\s*$' } |
-	Write-Log '{0}'
-}
-
 ### ConvertJsonDictTo-HashTable ###############################################
 
 # Deserialize the JSON string to a hashtable
@@ -224,143 +123,6 @@ function ConvertJsonDictTo-HashTable([String]$JsonString) {
 	$Result = @{}
 	foreach ($Property in $JsonObj.PSObject.Properties) {
 		$Result[$Property.Name] = $Property.Value
-	}
-
-	$Result
-}
-
-### Get-ModuleDependencyAndLatestVersion ######################################
-
-# Checks the PowerShell Gallery for the latest available version for the module
-function Get-ModuleDependencyAndLatestVersion([String]$Name) {
-
-	$ModuleUrlFormat = "$PsGalleryApiUrl/Search()?`$filter={1}&searchTerm=%27{0}%27&targetFramework=%27%27&includePrerelease=false&`$skip=0&`$top=40"
-
-	$ForcedModuleVersion = $ModuleVersionOverridesHashTable[$Name]
-
-	$CurrentModuleUrl =
-		if ($ForcedModuleVersion) {
-			$ModuleUrlFormat -f $Name, "Version%20eq%20'$ForcedModuleVersion'"
-		} else {
-			$ModuleUrlFormat -f $Name, 'IsLatestVersion'
-		}
-
-	$SearchResult = Invoke-RestMethod -Method Get -Uri $CurrentModuleUrl -UseBasicParsing
-
-	if (!$SearchResult) {
-		Write-Log "Could not find module '$($Name)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
-	} else {
-		if ($SearchResult -is 'Object[]') {
-			$SearchResult = $SearchResult | Where-Object { $_.title.InnerText -eq $Name }
-		}
-		if (!$SearchResult) {
-			Write-Log "Could not find module '$($Name)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
-		} else {
-			$PackageDetails = Invoke-RestMethod -Method Get -UseBasicParsing -Uri $SearchResult.id
-
-			$ModuleVersion = $PackageDetails.entry.properties.version
-			$Dependencies = $PackageDetails.entry.properties.dependencies
-
-			@($ModuleVersion, $Dependencies)
-		}
-	}
-}
-
-### Get-ModuleContentUrl ######################################################
-
-# Get module content URL
-function Get-ModuleContentUrl([String]$Name) {
-	$ModuleContentUrlFormat = "$PsGalleryApiUrl/package/{0}"
-	$VersionedModuleContentUrlFormat = "$ModuleContentUrlFormat/{1}"
-
-	$ForcedModuleVersion = $ModuleVersionOverridesHashTable[$Name]
-	if ($ForcedModuleVersion) {
-		$VersionedModuleContentUrlFormat -f $Name, $ForcedModuleVersion
-	} else {
-		$ModuleContentUrlFormat -f $Name
-	}
-}
-
-### Update-AutomationModule ###################################################
-
-# Imports the module with given version into Azure Automation
-function Update-AutomationModule([String]$Name) {
-
-	# Get module latest version
-	$LatestModuleVersionOnGallery = (Get-ModuleDependencyAndLatestVersion $Name)[0]
-
-	# Find the actual blob storage location of the module
-	$ModuleContentUrl = Get-ModuleContentUrl $Name
-	do {
-		$ModuleContentUrl = (Invoke-WebRequest -Uri $ModuleContentUrl -MaximumRedirection 0 -UseBasicParsing @Script:InvokeWebRequestCompatibilityParams -ErrorAction Ignore).Headers.Location | Select-Object -First 1
-	} while (!$ModuleContentUrl.Contains(".nupkg"))
-
-	# Get current installed module
-	$CurrentModule = Get-AzAutomationModule -Name $Name -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName
-
-	# Upgrade the module to the latest version
-	if ($CurrentModule.Version -eq $LatestModuleVersionOnGallery) {
-		Write-Log "Skipping '$($Name)' because is already present with version '$($LatestModuleVersionOnGallery)'"
-		return $false
-	} else {
-		Write-Log "Updating '$($Name)' module '$($CurrentModule.Version)' => '$($LatestModuleVersionOnGallery)'"
-		New-AzAutomationModule -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName -Name $Name -ContentLink $ModuleContentUrl | Out-Null
-		return $true
-	}
-}
-
-### Get-ModuleNameAndVersionFromPowershellGalleryDependencyFormat #############
-
-# Parses the dependency got from PowerShell Gallery and returns name and version
-function Get-ModuleNameAndVersionFromPowershellGalleryDependencyFormat([String]$Dependency) {
-	if ($null -eq $Dependency) {
-		throw "Improper dependency format"
-	}
-
-	$Tokens = $Dependency -split ':'
-	if ($Tokens.Count -ne 3) {
-		throw "Improper dependency format"
-	}
-
-	$Name = $Tokens[0]
-	$Version = $Tokens[1].Trim("[","]")
-
-	@($Name, $Version)
-}
-
-### AreAllModulesAdded ########################################################
-
-# Validates if the given list of modules has already been added to the module update map
-function AreAllModulesAdded([String[]] $ModuleListToAdd) {
-	$Result = $true
-
-	foreach ($ModuleToAdd in $ModuleListToAdd) {
-		$ModuleAccounted = $false
-
-		# $ModuleToAdd is specified in the following format:
-		#	   ModuleName:ModuleVersionSpecification:
-		# where ModuleVersionSpecification follows the specifiation
-		# at https://docs.microsoft.com/en-us/nuget/reference/package-versioning#version-ranges-and-wildcards
-		# For example:
-		#	   AzureRm.profile:[4.0.0]:
-		# or
-		#	   AzureRm.profile:3.0.0:
-		# In any case, the dependency version specification is always separated from the module name with
-		# the ':' character. The explicit intent of this runbook is to always install the latest module versions,
-		# so we want to completely ignore version specifications here.
-		$ModuleNameToAdd = $ModuleToAdd -replace '\:.*', ''
-
-		foreach($AlreadyIncludedModules in $ModuleUpdateMapOrder) {
-			if ($AlreadyIncludedModules -contains $ModuleNameToAdd) {
-				$ModuleAccounted = $true
-				break
-			}
-		}
-
-		if (!$ModuleAccounted) {
-			$Result = $false
-			break
-		}
 	}
 
 	$Result
@@ -419,12 +181,12 @@ function Create-ModuleUpdateMapOrder() {
 			$Dependencies = $VersionAndDependencies[1].Split("|")
 
 			# If the previous list contains all the dependencies then add it to current list
-			if ((-not $Dependencies) -or (AreAllModulesAdded $Dependencies)) {
+			if ((-not $Dependencies) -or (Test-AreAllModulesAdded $Dependencies)) {
 				Write-Log "Adding module '$($Module.Name)' to dependency chain"
 				$CurrentChainVersion += ,$Module.Name
 			} else {
 				# else add it back to the main loop variable list if not already added
-				if (!(AreAllModulesAdded $Module.Name)) {
+				if (!(Test-AreAllModulesAdded $Module.Name)) {
 					Write-Log "Module '$($Module.Name)' does not have all dependencies added as yet. Moving module for later import"
 					$NextAutomationModuleList += ,$Module
 				}
@@ -449,34 +211,172 @@ function Create-ModuleUpdateMapOrder() {
 	$ModuleUpdateMapOrder
 }
 
-### WaitFor-AllModulesImported ################################################
+### Get-ModuleContentUrl ######################################################
 
-# Wait and confirm that all the modules in the list have been imported successfully in Azure Automation
-function WaitFor-AllModulesImported([Collections.Generic.List[String]]$ModuleList) {
+# Get module content URL
+function Get-ModuleContentUrl([String]$Name) {
+	$ModuleContentUrlFormat = "$PsGalleryApiUrl/package/{0}"
+	$VersionedModuleContentUrlFormat = "$ModuleContentUrlFormat/{1}"
 
-	foreach ($Module in $ModuleList) {
-		Write-Log "### Check module '$($Module)' import status"
-		while ($true) {
-			$AutomationModule = Get-AzAutomationModule -Name $Module -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName
+	$ForcedModuleVersion = $ModuleVersionOverridesHashTable[$Name]
+	if ($ForcedModuleVersion) {
+		$VersionedModuleContentUrlFormat -f $Name, $ForcedModuleVersion
+	} else {
+		$ModuleContentUrlFormat -f $Name
+	}
+}
 
-			$IsTerminalProvisioningState =
-				($AutomationModule.ProvisioningState -eq "Succeeded") -or
-				($AutomationModule.ProvisioningState -eq "Failed") -or
-				($AutomationModule.ProvisioningState -eq "Created")
+### Get-ModuleDependencyAndLatestVersion ######################################
 
-			if ($IsTerminalProvisioningState) {
+# Checks the PowerShell Gallery for the latest available version for the module
+function Get-ModuleDependencyAndLatestVersion([String]$Name) {
+
+	$ModuleUrlFormat = "$PsGalleryApiUrl/Search()?`$filter={1}&searchTerm=%27{0}%27&targetFramework=%27%27&includePrerelease=false&`$skip=0&`$top=40"
+
+	$ForcedModuleVersion = $ModuleVersionOverridesHashTable[$Name]
+
+	$CurrentModuleUrl =
+		if ($ForcedModuleVersion) {
+			$ModuleUrlFormat -f $Name, "Version%20eq%20'$ForcedModuleVersion'"
+		} else {
+			$ModuleUrlFormat -f $Name, 'IsLatestVersion'
+		}
+
+	$SearchResult = Invoke-RestMethod -Method Get -Uri $CurrentModuleUrl -UseBasicParsing
+
+	if (!$SearchResult) {
+		Write-Log "Could not find module '$($Name)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
+	} else {
+		if ($SearchResult -is 'Object[]') {
+			$SearchResult = $SearchResult | Where-Object { $_.title.InnerText -eq $Name }
+		}
+		if (!$SearchResult) {
+			Write-Log "Could not find module '$($Name)' on PowerShell Gallery. This may be a module you imported from a different location. Ignoring this module."
+		} else {
+			$PackageDetails = Invoke-RestMethod -Method Get -UseBasicParsing -Uri $SearchResult.id
+
+			$ModuleVersion = $PackageDetails.entry.properties.version
+			$Dependencies = $PackageDetails.entry.properties.dependencies
+
+			@($ModuleVersion, $Dependencies)
+		}
+	}
+}
+
+### Get-ModuleNameAndVersionFromPowershellGalleryDependencyFormat #############
+
+# Parses the dependency got from PowerShell Gallery and returns name and version
+function Get-ModuleNameAndVersionFromPowershellGalleryDependencyFormat([String]$Dependency) {
+	if ($null -eq $Dependency) {
+		throw "Improper dependency format"
+	}
+
+	$Tokens = $Dependency -split ':'
+	if ($Tokens.Count -ne 3) {
+		throw "Improper dependency format"
+	}
+
+	$Name = $Tokens[0]
+	$Version = $Tokens[1].Trim("[","]")
+
+	@($Name, $Version)
+}
+
+### SignInTo-AzureAutomation ##################################################
+
+# Sign in to Azure Automation account
+function SignInTo-AzureAutomation() {
+	Write-Log "### Sign in to Azure Active Directory"
+
+	switch ($Env:POWERSHELL_DISTRIBUTION_CHANNEL) {
+		'AzureAutomation' {
+			Write-Log "Sign in with system managed identity"
+
+			# Ensure that you do not inherit an AzContext
+			Disable-AzContextAutosave -Scope Process | Out-Null
+
+			# Connect using a Managed Service Identity
+			$AzureContext = (Connect-AzAccount -Identity).Context
+
+			# Set and store context
+			Set-AzContext -Tenant $AzureContext.Tenant -SubscriptionId $AzureContext.Subscription -DefaultProfile $AzureContext | Out-Null
+		}
+		default {
+			Write-Log "Using current user credentials"
+		}
+	}
+
+	# Log Azure Context
+	Get-AzContext |
+	Format-List |
+	Out-String -Stream -Width 1000 |
+	Where-Object { $_ -notmatch '^\s*$' } |
+	Write-Log '{0}'
+}
+
+### Test-AreAllModulesAdded ###################################################
+
+# Validates if the given list of modules has already been added to the module update map
+function Test-AreAllModulesAdded([String[]] $ModuleListToAdd) {
+	$Result = $true
+
+	foreach ($ModuleToAdd in $ModuleListToAdd) {
+		$ModuleAccounted = $false
+
+		# $ModuleToAdd is specified in the following format:
+		#	   ModuleName:ModuleVersionSpecification:
+		# where ModuleVersionSpecification follows the specifiation
+		# at https://docs.microsoft.com/en-us/nuget/reference/package-versioning#version-ranges-and-wildcards
+		# For example:
+		#	   AzureRm.profile:[4.0.0]:
+		# or
+		#	   AzureRm.profile:3.0.0:
+		# In any case, the dependency version specification is always separated from the module name with
+		# the ':' character. The explicit intent of this runbook is to always install the latest module versions,
+		# so we want to completely ignore version specifications here.
+		$ModuleNameToAdd = $ModuleToAdd -replace '\:.*', ''
+
+		foreach($AlreadyIncludedModules in $ModuleUpdateMapOrder) {
+			if ($AlreadyIncludedModules -contains $ModuleNameToAdd) {
+				$ModuleAccounted = $true
 				break
 			}
-
-			Write-Log "Module '$($Module)' is getting imported, waiting for 30 seconds"
-			Start-Sleep -Seconds 30
 		}
 
-		if ($AutomationModule.ProvisioningState -ne "Succeeded") {
-			throw "Failed to import module '$($Module)'. See details in the Azure Portal."
-		} else {
-			Write-Log "Module '$($Module)' successfully imported"
+		if (!$ModuleAccounted) {
+			$Result = $false
+			break
 		}
+	}
+
+	$Result
+}
+
+### Update-AutomationModule ###################################################
+
+# Imports the module with given version into Azure Automation
+function Update-AutomationModule([String]$Name) {
+
+	# Get module latest version
+	$LatestModuleVersionOnGallery = (Get-ModuleDependencyAndLatestVersion $Name)[0]
+
+	# Find the actual blob storage location of the module
+	$ModuleContentUrl = Get-ModuleContentUrl $Name
+	do {
+		$ModuleContentUrl = (Invoke-WebRequest -Uri $ModuleContentUrl -MaximumRedirection 0 -UseBasicParsing @Script:InvokeWebRequestCompatibilityParams -ErrorAction Ignore).Headers.Location | Select-Object -First 1
+	} while (!$ModuleContentUrl.Contains(".nupkg"))
+
+	# Get current installed module
+	$CurrentModule = Get-AzAutomationModule -Name $Name -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName
+
+	# Upgrade the module to the latest version
+	if ($CurrentModule.Version -eq $LatestModuleVersionOnGallery) {
+		Write-Log "Skipping '$($Name)' because is already present with version '$($LatestModuleVersionOnGallery)'"
+		return $false
+	} else {
+		Write-Log "Updating '$($Name)' module '$($CurrentModule.Version)' => '$($LatestModuleVersionOnGallery)'"
+		New-AzAutomationModule -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName -Name $Name -ContentLink $ModuleContentUrl | Out-Null
+		return $true
 	}
 }
 
@@ -567,7 +467,107 @@ function Update-ProfileAndAutomationVersionToLatest([String]$AutomationModuleNam
 	Import-Module (Join-Path $AutomationUnzipPath ($AutomationModuleName + ".psd1")) -Force
 }
 
+### WaitFor-AllModulesImported ################################################
+
+# Wait and confirm that all the modules in the list have been imported successfully in Azure Automation
+function WaitFor-AllModulesImported([Collections.Generic.List[String]]$ModuleList) {
+
+	foreach ($Module in $ModuleList) {
+		Write-Log "### Check module '$($Module)' import status"
+		while ($true) {
+			$AutomationModule = Get-AzAutomationModule -Name $Module -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName
+
+			$IsTerminalProvisioningState =
+				($AutomationModule.ProvisioningState -eq "Succeeded") -or
+				($AutomationModule.ProvisioningState -eq "Failed") -or
+				($AutomationModule.ProvisioningState -eq "Created")
+
+			if ($IsTerminalProvisioningState) {
+				break
+			}
+
+			Write-Log "Module '$($Module)' is getting imported, waiting for 30 seconds"
+			Start-Sleep -Seconds 30
+		}
+
+		if ($AutomationModule.ProvisioningState -ne "Succeeded") {
+			throw "Failed to import module '$($Module)'. See details in the Azure Portal."
+		} else {
+			Write-Log "Module '$($Module)' successfully imported"
+		}
+	}
+}
+
 #endregion
+
+### Write-Log #################################################################
+
+# Write formatted log message
+function Write-Log() {
+	param(
+		[Parameter(Position=0)]
+		[String]$Message,
+
+		[Parameter()]
+		[String[]]$Property,
+
+		[Parameter(ValueFromPipeline)]
+		[Object[]]$Arguments
+	)
+
+	begin {
+		$Properties = $Property
+	}
+
+	process {
+		# Always output verbose messages
+		$Private:SavedVerbosePreference = $VerbosePreference
+		$VerbosePreference = 'Continue'
+
+		# Format timestamp
+		$Timestamp = '{0}Z' -f (Get-Date -Format 's')
+		$MessageWithTimestamp = '{0} {1}' -f $Timestamp, $Message
+
+		# Format arguments
+		if ($null -eq $Properties) {
+			# $Arguments contains array of values
+			$Values = @()
+			foreach ($Argument in $Arguments) {
+				$Values += $_ | Out-String |
+				# Remove ANSI colors
+				ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' }
+			}
+			Write-Verbose ($MessageWithTimestamp -f $Values)
+		} else {
+			# $Arguments contains array of objects with properties
+			foreach ($Argument in $Arguments) {
+				$Values = $()
+				# Convert hashtable to object
+				if ($Argument -is 'Hashtable') {
+					$Argument = [PSCustomObject]$Argument
+				}
+				$ArgumentProperties = $Argument.PSObject.Properties.Name
+				foreach ($Property in $Properties) {
+					$Values += if ($ArgumentProperties -contains $Property) {
+						if ($null -ne ($Value = $Argument.$_)) {
+							$Value | Out-String |
+							# Remove ANSI colors
+							ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' }
+						} else {
+							'ENULL'
+						}
+					} else {
+						'ENONENT'
+					}
+				}
+				Write-Verbose ($MessageWithTimestamp -f $Values)
+			}
+		}
+
+		# Restore $VerbosePreference
+		$VerbosePreference = $Private:SavedVerbosePreference
+	}
+}
 
 ###############################################################################
 ### MAIN ######################################################################
