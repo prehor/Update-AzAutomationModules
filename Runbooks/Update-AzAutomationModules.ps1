@@ -636,7 +636,11 @@ Update-ProfileAndAutomationVersionToLatest -AutomationModuleName $AzAutomationMo
 Login-AzureAutomation
 
 # Log Azure Context
-Get-AzContext | Format-List | Out-String -Stream -Width 1000 | Where-Object { $_ -notmatch '^\s*$' } | Write-Log '{0}'
+Get-AzContext |
+Format-List |
+Out-String -Stream -Width 1000 |
+Where-Object { $_ -notmatch '^\s*$' } |
+Write-Log '{0}'
 
 ### Update Azure Automation modules ###########################################
 
