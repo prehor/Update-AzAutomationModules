@@ -179,10 +179,10 @@ function Write-Log() {
 	}
 }
 
-### Login-AzureAutomation #####################################################
+### SignInTo-AzAzureAutomation ################################################
 
-# Login in to Azure Active Directory
-function Login-AzureAutomation() {
+# Sign in to Azure Automation account
+function SignInTo-AzAzureAutomation() {
 	Write-Log "### Sign in to Azure Active Directory"
 
 	switch ($Env:POWERSHELL_DISTRIBUTION_CHANNEL) {
@@ -202,6 +202,13 @@ function Login-AzureAutomation() {
 			Write-Log "Using current user credentials"
 		}
 	}
+
+	# Log Azure Context
+	Get-AzContext |
+	Format-List |
+	Out-String -Stream -Width 1000 |
+	Where-Object { $_ -notmatch '^\s*$' } |
+	Write-Log '{0}'
 }
 
 ### ConvertJsonDictTo-HashTable ###############################################
@@ -632,15 +639,8 @@ Update-ProfileAndAutomationVersionToLatest -AutomationModuleName $AzAutomationMo
 
 ### Sign in to cloud services #################################################
 
-# Sign in to Azure
-Login-AzureAutomation
-
-# Log Azure Context
-Get-AzContext |
-Format-List |
-Out-String -Stream -Width 1000 |
-Where-Object { $_ -notmatch '^\s*$' } |
-Write-Log '{0}'
+# Sign in to Azure Automation account
+SignInTo-AzAzureAutomation
 
 ### Update Azure Automation modules ###########################################
 
