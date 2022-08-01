@@ -202,9 +202,6 @@ function Login-AzureAutomation() {
 			Write-Log "Using current user credentials"
 		}
 	}
-
-	# Log Azure Context
-	Get-AzContext | Format-List | Out-String -Stream -Width 1000 | Where-Object { $_ -notmatch '^\s*$' } | Write-Log '{0}'
 }
 
 ### ConvertJsonDictTo-HashTable ###############################################
@@ -582,10 +579,12 @@ $Private:SavedVerbosePreference = $VerbosePreference
 $VerbosePreference = 'SilentlyContinue'
 
 ### Open log ##################################################################
+
+# Log start time
 $StartTimestamp = Get-Date
 Write-Log "### Runbook started at $(Get-Date -Format 's')Z"
 
-### Parameters ################################################################
+### Default Parameters ########################################################
 
 # $AutomationAccountName
 if (-not $AutomationAccountName) {
@@ -627,17 +626,28 @@ if ($ModuleVersionOverrides) {
 }
 
 ### Update local Azure Automation module ######################################
+
+# Update local sandbox Azure Automation module
 Update-ProfileAndAutomationVersionToLatest -AutomationModuleName $AzAutomationModuleName
 
-### Sign in to Azure ##########################################################
+### Sign in to cloud services #################################################
+
+# Sign in to Azure
 Login-AzureAutomation
 
+# Log Azure Context
+Get-AzContext | Format-List | Out-String -Stream -Width 1000 | Where-Object { $_ -notmatch '^\s*$' } | Write-Log '{0}'
+
 ### Update Azure Automation modules ###########################################
+
+# Update Azure Automation modules
 Write-Log "### Update Azure Automation '$($ResourceGroupName)/$($AutomationAccountName)' modules"
 $ModuleUpdateMapOrder = Create-ModuleUpdateMapOrder
 Update-ModulesInAutomationAccordingToDependency $ModuleUpdateMapOrder
 
 ### Close log #################################################################
+
+# Log duration
 $StopTimestamp = Get-Date
 Write-Log "### Runbook finished in $($StopTimestamp - $StartTimestamp)"
 
