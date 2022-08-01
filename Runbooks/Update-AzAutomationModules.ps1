@@ -179,10 +179,10 @@ function Write-Log() {
 	}
 }
 
-### SignInTo-AzAzureAutomation ################################################
+### SignInTo-AzureAutomation ##################################################
 
 # Sign in to Azure Automation account
-function SignInTo-AzAzureAutomation() {
+function SignInTo-AzureAutomation() {
 	Write-Log "### Sign in to Azure Active Directory"
 
 	switch ($Env:POWERSHELL_DISTRIBUTION_CHANNEL) {
@@ -640,7 +640,7 @@ Update-ProfileAndAutomationVersionToLatest -AutomationModuleName $AzAutomationMo
 ### Sign in to cloud services #################################################
 
 # Sign in to Azure Automation account
-SignInTo-AzAzureAutomation
+SignInTo-AzureAutomation
 
 ### Update Azure Automation modules ###########################################
 
