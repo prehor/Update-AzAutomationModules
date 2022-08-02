@@ -324,13 +324,13 @@ function Test-AreAllModulesAdded([String[]] $ModuleListToAdd) {
 		$ModuleAccounted = $false
 
 		# $ModuleToAdd is specified in the following format:
-		#	   ModuleName:ModuleVersionSpecification:
+		#		ModuleName:ModuleVersionSpecification:
 		# where ModuleVersionSpecification follows the specifiation
 		# at https://docs.microsoft.com/en-us/nuget/reference/package-versioning#version-ranges-and-wildcards
 		# For example:
-		#	   AzureRm.profile:[4.0.0]:
+		#		AzureRm.profile:[4.0.0]:
 		# or
-		#	   AzureRm.profile:3.0.0:
+		#		AzureRm.profile:3.0.0:
 		# In any case, the dependency version specification is always separated from the module name with
 		# the ':' character. The explicit intent of this runbook is to always install the latest module versions,
 		# so we want to completely ignore version specifications here.
@@ -390,7 +390,7 @@ function Update-ModulesInAutomationAccordingToDependency([String[][]]$ModuleUpda
 	foreach($ModuleList in $ModuleUpdateMapOrder) {
 		$UpdatedModuleList = @()
 		foreach ($Module in $ModuleList) {
-			Write-Log  "### Update module '$($Module)'"
+			Write-Log "### Update module '$($Module)'"
 
 			if (Update-AutomationModule -Name $Module) {
 				$UpdatedModuleList += ,$Module
@@ -627,9 +627,9 @@ if (-not $ResourceGroupName) {
 
 # Convert JSON string to hashtable
 if ($ModuleVersionOverrides) {
-    $ModuleVersionOverridesHashTable = ConvertJsonDictTo-HashTable $ModuleVersionOverrides
+	$ModuleVersionOverridesHashTable = ConvertJsonDictTo-HashTable $ModuleVersionOverrides
 } else {
-    $ModuleVersionOverridesHashTable = @{}
+	$ModuleVersionOverridesHashTable = @{}
 }
 
 ### Update local Azure Automation module ######################################
