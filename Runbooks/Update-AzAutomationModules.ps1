@@ -17,6 +17,10 @@ Azure Automation account with the module versions published in the PowerShell Ga
 Prerequisites:
 * An Azure Automation account with an Azure Managed Identity account credential.
 
+Optional Azure Automation account variables:
+* AZURE_AUTOMATION_ACCOUNT_NAME - Name of Azure Automation account.
+* AZURE_AUTOMATION_RESOURCE_GROUP - Name of Azure Automation account Resource Group.
+
 Required Azure permissions:
 * Contributor for updating Azure Automation System Managed Identity to updated Azure Account.
 
