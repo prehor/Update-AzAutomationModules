@@ -156,17 +156,18 @@ function Create-ModuleUpdateMapOrder() {
 		Where-Object {
 			$AutomationModule = $_
 			# Select required modules
-			$SkipModule | ForEach-Object {
-				if ($AutomationModule.Name -like $_) {
-					return $false
-				}
-			}
+			$IncludeModule = $false
 			$ModuleName | ForEach-Object {
 				if ($AutomationModule.Name -like $_) {
-					return $true
+					$IncludeModule = $true
 				}
 			}
-			$false
+			$SkipModule | ForEach-Object {
+				if ($AutomationModule.Name -like $_) {
+					$IncludeModule = $false
+				}
+			}
+			$IncludeModule
 		}
 	)
 	Write-Log "Found $($CurrentAutomationModuleList.Count) modules"
