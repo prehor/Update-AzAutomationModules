@@ -176,12 +176,12 @@ function Create-ModuleUpdateMapOrder() {
 	$ModuleEntryArray = ,$ModuleEntry
 	$ModuleUpdateMapOrder += ,$ModuleEntryArray
 
+	Write-Log "### Check module dependencies"
 	do {
 		$NextAutomationModuleList = @()
 		$CurrentChainVersion = $null
 		# Add it to the list if the modules are not available in the same list
 		foreach ($Module in $CurrentAutomationModuleList) {
-			Write-Log "### Check module '$($Module.Name)' dependencies"
 			$VersionAndDependencies = Get-ModuleDependencyAndLatestVersion $Module.Name
 			if ($null -eq $VersionAndDependencies) {
 				continue
@@ -193,12 +193,10 @@ function Create-ModuleUpdateMapOrder() {
 			if ((-not $Dependencies) -or (Test-AreAllModulesAdded $Dependencies)) {
 				Write-Log "Adding module '$($Module.Name)' to dependency chain"
 				$CurrentChainVersion += ,$Module.Name
-			} else {
-				# else add it back to the main loop variable list if not already added
-				if (!(Test-AreAllModulesAdded $Module.Name)) {
-					Write-Log "Module '$($Module.Name)' does not have all dependencies added as yet. Moving module for later import"
-					$NextAutomationModuleList += ,$Module
-				}
+			# Else add it back to the main loop variable list if not already added
+			} elseif (!(Test-AreAllModulesAdded $Module.Name)) {
+				Write-Log "Module '$($Module.Name)' does not have all dependencies added as yet. Moving module for later import"
+				$NextAutomationModuleList += ,$Module
 			}
 		}
 
@@ -392,11 +390,11 @@ function Update-AutomationModule([String]$Name) {
 # from the previous element have been added.
 function Update-ModulesInAutomationAccordingToDependency([String[][]]$ModuleUpdateMapOrder) {
 
+	Write-Log "### Update modules"
+
 	foreach($ModuleList in $ModuleUpdateMapOrder) {
 		$UpdatedModuleList = @()
 		foreach ($Module in $ModuleList) {
-			Write-Log "### Update module '$($Module)'"
-
 			if (Update-AutomationModule -Name $Module) {
 				$UpdatedModuleList += ,$Module
 			}
@@ -404,10 +402,12 @@ function Update-ModulesInAutomationAccordingToDependency([String[][]]$ModuleUpda
 			if ($UpdatedModuleList.Count -eq $SimultaneousModuleImportJobCount) {
 				# It takes some time for the modules to start getting imported.
 				# Sleep for sometime before making a query to see the status
-				Write-Log "Waiting 30 seconds to start importing modules"
+				Write-Log "### Check module import status"
+				Write-Log "$($SimultaneousModuleImportJobCount) simultaneous import job limit reached, waiting 30 seconds to start importing modules"
 				Start-Sleep -Seconds 30
 				WaitFor-AllModulesImported -ModuleList $UpdatedModuleList
 				$UpdatedModuleList = @()
+				Write-Log "### Update modules"
 			}
 		}
 
@@ -415,7 +415,8 @@ function Update-ModulesInAutomationAccordingToDependency([String[][]]$ModuleUpda
 		if ($UpdatedModuleList.Count -gt 0) {
 			# It takes some time for the modules to start getting imported.
 			# Sleep for sometime before making a query to see the status
-			Write-Log "Waiting 30 seconds to start importing modules"
+				Write-Log "### Check module import status"
+				Write-Log "Waiting 30 seconds to start importing modules"
 			Start-Sleep -Seconds 30
 			WaitFor-AllModulesImported -ModuleList $UpdatedModuleList
 		}
@@ -478,7 +479,6 @@ function Update-ProfileAndAutomationVersionToLatest([String]$AutomationModuleNam
 function WaitFor-AllModulesImported([Collections.Generic.List[String]]$ModuleList) {
 
 	foreach ($Module in $ModuleList) {
-		Write-Log "### Check module '$($Module)' import status"
 		while ($true) {
 			$AutomationModule = Get-AzAutomationModule -Name $Module -ResourceGroupName $ResourceGroupName -AutomationAccountName $AutomationAccountName
 
