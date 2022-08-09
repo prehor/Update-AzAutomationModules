@@ -299,19 +299,15 @@ function SignInTo-AzureAutomation() {
 			$AzureContext = (Connect-AzAccount -Identity).Context
 
 			# Set and store context
-			Set-AzContext -Tenant $AzureContext.Tenant -SubscriptionId $AzureContext.Subscription -DefaultProfile $AzureContext | Out-Null
+			Set-AzContext -Tenant $AzureContext.Tenant -SubscriptionId $AzureContext.Subscription -DefaultProfile $AzureContext |
+			Write-Log
 		}
 		default {
-			Write-Log "Using current user credentials"
+			Write-Log "Using current user connection"
+			Get-AzContext |
+			Write-Log
 		}
 	}
-
-	# Log Azure Context
-	Get-AzContext |
-	Format-List |
-	Out-String -Stream -Width 1000 |
-	Where-Object { $_ -notmatch '^\s*$' } |
-	Write-Log '{0}'
 }
 
 ### Test-AreAllModulesAdded ###################################################
@@ -504,64 +500,69 @@ function WaitFor-AllModulesImported([Collections.Generic.List[String]]$ModuleLis
 
 # Write formatted log message
 function Write-Log() {
+	[CmdletBinding(DefaultParameterSetName='Arguments')]
 	param(
 		[Parameter(Position=0)]
 		[String]$Message,
 
-		[Parameter()]
+		[Parameter(ParameterSetName='Arguments',ValueFromRemainingArguments)]
+		[Object[]]$Arguments,
+
+		[Parameter(ParameterSetName='Pipeline', ValueFromRemainingArguments)]
 		[String[]]$Property,
 
-		[Parameter(ValueFromPipeline)]
-		[Object[]]$Arguments
+		[Parameter(ParameterSetName='Pipeline',ValueFromPipeline)]
+		[Object]$InputObject
 	)
-
-	begin {
-		$Properties = $Property
-	}
 
 	process {
 		# Always output verbose messages
 		$Private:SavedVerbosePreference = $VerbosePreference
 		$VerbosePreference = 'Continue'
 
-		# Format timestamp
-		$Timestamp = '{0}Z' -f (Get-Date -Format 's')
-		$MessageWithTimestamp = '{0} {1}' -f $Timestamp, $Message
-
-		# Format arguments
-		if ($null -eq $Properties) {
-			# $Arguments contains array of values
-			$Values = @()
-			foreach ($Argument in $Arguments) {
-				$Values += $_ | Out-String |
-				# Remove ANSI colors
-				ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' }
-			}
-			Write-Verbose ($MessageWithTimestamp -f $Values)
-		} else {
-			# $Arguments contains array of objects with properties
-			foreach ($Argument in $Arguments) {
-				$Values = $()
-				# Convert hashtable to object
-				if ($Argument -is 'Hashtable') {
-					$Argument = [PSCustomObject]$Argument
+		# Process arguments
+		$Lines = @()
+		switch ($PsCmdlet.ParameterSetName) {
+			'Pipeline' {
+				# Default message format for pipeline input
+				if (-not $Message) {
+					$Message = '{0}'
 				}
-				$ArgumentProperties = $Argument.PSObject.Properties.Name
-				foreach ($Property in $Properties) {
-					$Values += if ($ArgumentProperties -contains $Property) {
-						if ($null -ne ($Value = $Argument.$_)) {
-							$Value | Out-String |
-							# Remove ANSI colors
-							ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' }
-						} else {
-							'ENULL'
-						}
+				# Get arguments from object
+				if ($null -eq $Property) {
+					# Input object is string
+					if ($InputObject -is [String]) {
+						$Lines += $Message -f $InputObject
+					# Format input object
 					} else {
-						'ENONENT'
+						$Lines += $InputObject |
+						Format-List |										# Format object as a list
+						Out-String -Stream -Width 1000 |					# Convert lines to string
+						ForEach-Object { $_ -replace '\e\[\d*;?\d+m','' } |	# Remove ANSI colors
+						Where-Object { $_ -notmatch '^\s*$' } |				# Strip empty lines
+						ForEach-Object { $Message -f $_ }					# Format message
 					}
+				} else {
+					# Get arguments from object properties
+					$Arguments = $Property | ForEach-Object { $InputObject.$_ }
+					$Lines += $Message -f $Arguments
 				}
-				Write-Verbose ($MessageWithTimestamp -f $Values)
 			}
+			default {
+				# Format message with arguments
+				if ($Arguments) {
+					$Lines += $Message -f $Arguments
+				# Format message without arguments
+				} else {
+					$Lines += $Message
+				}
+			}
+		}
+
+		# Add timestamp to the message
+		$Timestamp = '{0:s}{0:%K}' -f (Get-Date)
+		$Lines | ForEach-Object {
+			Write-Verbose ('{0} {1}' -f $Timestamp, $_)
 		}
 
 		# Restore $VerbosePreference
@@ -589,7 +590,7 @@ $VerbosePreference = 'SilentlyContinue'
 
 # Log start time
 $StartTimestamp = Get-Date
-Write-Log "### Runbook started at $(Get-Date -Format 's')Z"
+Write-Log "### Runbook started at {0:s}{0:%K}" -Arguments $StartTimestamp
 
 ### Default Parameters ########################################################
 
