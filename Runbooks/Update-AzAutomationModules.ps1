@@ -14,7 +14,11 @@ Update PowerShell modules in an Azure Automation account.
 This Azure Automation runbook updates PowerShell modules imported into an
 Azure Automation account with the module versions published in the PowerShell Gallery.
 
-Prerequisite: an Azure Automation account with an Azure Managed Identity account credential.
+Prerequisites:
+* An Azure Automation account with an Azure Managed Identity account credential.
+
+Required Azure permissions:
+* Contributor for updating Azure Automation System Managed Identity to updated Azure Account.
 
 .PARAMETER AutomationAccountName
 The Azure Automation account name. Uses the default value from the environment variable AZURE_AUTOMATION_ACCOUNT_NAME.

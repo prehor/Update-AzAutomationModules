@@ -2,6 +2,17 @@
 
 This Azure Automation Runbook updates PowerShell modules imported into an Azure Automation account with the module versions published in the PowerShell Gallery.
 
+## Usage
+
+Fork this repository and synchronize it using (Azure Automation Source Control)[https://docs.microsoft.com/en-us/azure/automation/source-control-integration]:
+* Source Control Name: Update PowerShell Modules
+* Source Control Type: GitHub
+* Repository: Update-AzAutomationModules
+* Branch: main
+* Folder Path: /Runbooks
+* Auto Sync: Off
+* Publish Runbook: On
+
 ## Reporting Issues
 
 Issues can be reported by using [GitHub Issues](/../../issues).
